@@ -23,15 +23,16 @@ Dark by default. Five themes (Dark, Amber, Midnight, Forest, Slate) via the
 swatches in the top-right corner. Your choice is remembered.
 
 ### Dark
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/fd9f8775-459f-4413-bd0e-40ac961a3829" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/aeafd119-7952-4325-a5a1-e3a75600afdd" />
 
 ### Amber
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/4bd58518-2385-423a-b8b7-975fb0045cc8" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/d78d631e-f228-4503-80dc-dd27a4b41d0d" />
 
 ### Midnight
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/d9e55dc2-03dd-401d-9e7e-f80e24ece33e" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/27ec8abe-46c2-4788-9c1e-164efead685a" />
 
 ### Forest
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/7efe4954-4906-46c7-8b17-47f2df782899" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/8528c89b-dbdb-41ba-935f-50818f5b9743" />
+
 
 (Note I am leaving out Slate because it is mostly the same as Dark)
