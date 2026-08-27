@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Studying Clock</title>
+<style>
+  :root {
+    --bg: #0e1016;
+    --panel: #1d222c;
+    --text: #e8eaee;
+    --muted: #8a91a0;
+    --accent: #4cc2ff;
+    --accent-glow: rgba(76, 194, 255, 0.18);
+    --danger: #ff5c6b;
+  }
+  .theme-amber {
+    --bg: #141610;
+    --panel: #1f1e14;
+    --text: #f3ead7;
+    --muted: #a8957a;
+    --accent: #ffb84d;
+    --danger: #ff6a5c;
+  }
+  .theme-midnight {
+    --bg: #0d0f1e;
+    --panel: #141a2e;
+    --text: #e5ebf7;
+    --muted: #7d8aa8;
+    --accent: #8b9dff;
+    --danger: #ff5c6c;
+  }
+  .theme-forest {
+    --bg: #0d1410;
+    --panel: #152018;
+    --text: #e6efe8;
+    --muted: #8f9f8f;
+    --accent: #5ed98a;
+    --danger: #ff6b5c;
+  }
+  .theme-slate {
+    --bg: #101318;
+    --panel: #1a1f27;
+    --text: #e9edf2;
+    --muted: #8b95a3;
+    --accent: #7ea3f0;
+    --danger: #ff6b61;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 32px; gap: 30px;
+    user-select: none;
+    transition: background 0.3s, color 0.3s;
+  }
+
+  /* ---- Clock ---- */
+  .clock { text-align: center; }
+  .line {
+    display: flex; align-items: baseline; justify-content: center;
+  }
+  .time {
+    font-size: clamp(5rem, 17vmin, 11rem);
+    font-weight: 250;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    letter-spacing: 0.01em;
+  }
+  .ampm {
+    font-size: clamp(1.4rem, 4.6vmin, 3rem);
+    font-weight: 400;
+    color: var(--muted);
+    margin-left: 0.4em;
+  }
+  .date { color: var(--muted); font-size: clamp(1rem, 2.2vmin, 1.35rem); margin-top: 14px; letter-spacing: 0.04em; }
+
+  /* ---- Timer ---- */
+  .card {
+    background: var(--panel);
+    border-radius: 18px;
+    padding: 22px 28px;
+    width: min(540px, 92vw);
+    text-align: center;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .card.ringing { box-shadow: 0 0 0 3px var(--accent); }
+  .presets { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    border: none; background: var(--bg);
+    color: var(--text);
+    font-size: 1.05rem; padding: 10px 18px;
+    border-radius: 10px; cursor: pointer;
+    font-family: inherit;
+    transition: transform 0.06s, background 0.2s;
+  }
+  .btn:hover { background: rgba(255, 255, 255, 0.09); }
+  .btn:active { transform: scale(0.96); }
+  .btn.primary { background: var(--accent); color: #0a0c10; font-weight: 600; }
+  .btn.primary:hover { background: var(--accent); }
+  .btn.danger { background: var(--danger); color: #fff; font-weight: 600; }
+  .btn.danger:hover { background: var(--danger); }
+
+  .disp { margin-top: 20px; }
+  .timer-display {
+    font-size: clamp(2.6rem, 8vmin, 4.6rem);
+    font-weight: 300;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+    min-height: 1.1em;
+  }
+  .timer-display.active { color: var(--accent); }
+  .timer-display.finished { color: var(--danger); }
+  .live-dur { color: var(--muted); font-size: 1rem; min-height: 1em; margin-top: 4px; }
+
+  .custom-row { display: flex; gap: 8px; justify-content: center; margin-top: 18px; }
+  .row { display: flex; gap: 10px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+
+  input[type="number"] {
+    background: var(--bg); color: var(--text);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 10px; padding: 9px 12px; width: 96px;
+    font-size: 1rem; text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-family: inherit;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .hint { color: var(--muted); font-size: 0.82rem; text-align: center; }
+
+  /* ---- Theme picker ---- */
+  #theme-menu {
+    position: fixed; top: 18px; right: 18px;
+    display: flex; gap: 8px;
+    background: var(--panel); padding: 8px; border-radius: 14px;
+    transition: background 0.3s;
+  }
+  .swatch {
+    width: 26px; height: 26px; border-radius: 8px;
+    border: 2px solid transparent; cursor: pointer; padding: 0;
+  }
+  .swatch:hover { transform: scale(1.1); }
+  .swatch.sel { border-color: var(--text); }
+
+  @media (max-width: 560px) {
+    body { gap: 22px; padding: 20px; }
+    .card { padding: 18px 16px; width: 100%; }
+  }
+</style>
+</head>
+<body>
+  <div id="theme-menu" role="radiogroup" aria-label="Theme"></div>
+
+  <div class="clock">
+    <div class="line">
+      <span class="time" id="time">--:--</span>
+      <span class="ampm" id="ampm"></span>
+    </div>
+    <div class="date" id="date"></div>
+  </div>
+
+  <div class="card">
+    <div class="presets">
+      <button class="btn" onclick="startTimer(15)">15 min</button>
+      <button class="btn" onclick="startTimer(30)">30 min</button>
+      <button class="btn" onclick="startTimer(45)">45 min</button>
+      <button class="btn" onclick="startTimer(60)">1 hr</button>
+      <button class="btn" onclick="startTimer(90)">90 min</button>
+    </div>
+    <div class="disp">
+      <div class="timer-display" id="tDisp">--:--</div>
+      <div class="live-dur" id="liveDur"></div>
+    </div>
+    <div class="custom-row">
+      <input type="number" id="mins" min="1" max="600" placeholder="Custom min">
+      <button class="btn primary" onclick="customStart()">Timer</button>
+    </div>
+    <div class="row">
+      <button class="btn danger" id="stopBtn" onclick="stopTimer()" style="display:none">Stop</button>
+    </div>
+  </div>
+
+  <div class="hint">The clock is always first. Start a countdown when you need one.</div>
+
+<script>
+  "use strict";
+
+  /* ---------- Clock ---------- */
+  const timeEl = document.getElementById('time');
+  const ampmEl = document.getElementById('ampm');
+  const dateEl = document.getElementById('date');
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function tick() {
+    const now = new Date();
+    let h = now.getHours();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    timeEl.textContent = h + ':' + pad(now.getMinutes());
+    ampmEl.textContent = ampm;
+    dateEl.textContent = now.toLocaleDateString(undefined,
+      { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+  setInterval(tick, 1000);
+  tick();
+
+  /* ---------- Timer ---------- */
+  const tDisp = document.getElementById('tDisp');
+  const liveDur = document.getElementById('liveDur');
+  const stopBtn = document.getElementById('stopBtn');
+  const cardEl = document.querySelector('.card');
+
+  let endAt = null;
+  let totalMs = 0;
+  let raf = null;
+
+  function fmt(ms) {
+    const total = Math.max(0, Math.ceil(ms / 1000));
+    const hh = Math.floor(total / 3600);
+    const mm = Math.floor((total % 3600) / 60);
+    const ss = total % 60;
+    return (hh ? pad(hh) + ':' : '') + pad(mm) + ':' + pad(ss);
+  }
+  function fmtLong(ms) {
+    const min = Math.round(ms / 60000);
+    if (min >= 60) return Math.round(min / 60) + ' hr';
+    return min + ' min';
+  }
+
+  /* Beep. AudioContext needs a prior user gesture; preset buttons are that gesture. */
+  let audioCtx = null;
+  function beep() {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 960;
+      gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.35, audioCtx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.7);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + 0.7);
+    } catch (e) { /* no audio, visual still works */ }
+  }
+
+  function startTimer(minutes) {
+    cancelAnimationFrame(raf);
+    raf = null;
+    endAt = Date.now() + minutes * 60000;
+    totalMs = minutes * 60000;
+    liveDur.textContent = fmtLong(totalMs) + ' timer';
+    tDisp.classList.remove('finished');
+    stopBtn.style.display = '';
+    cardEl.classList.remove('ringing');
+    updateTimer();
+  }
+
+  function customStart() {
+    const v = parseInt(document.getElementById('mins').value, 10);
+    if (!isNaN(v) && v > 0) startTimer(v);
+  }
+
+  function stopTimer() {
+    endAt = null;
+    cancelAnimationFrame(raf);
+    tDisp.textContent = '--:--';
+    liveDur.textContent = '';
+    tDisp.classList.remove('active', 'finished');
+    stopBtn.style.display = 'none';
+    cardEl.classList.remove('ringing');
+  }
+
+  function updateTimer() {
+    if (!endAt) return;
+    const rem = endAt - Date.now();
+    tDisp.textContent = fmt(rem);
+    tDisp.classList.add('active');
+    if (rem <= 0) {
+      tDisp.classList.remove('active');
+      tDisp.classList.add('finished');
+      finish();
+      return;
+    }
+    raf = requestAnimationFrame(updateTimer);
+  }
+
+  function finish() {
+    endAt = null;
+    liveDur.textContent = 'Time is up';
+    cardEl.classList.add('ringing');
+    beep();
+    setTimeout(() => cardEl.classList.remove('ringing'), 3000);
+  }
+
+  /* ---------- Themes ---------- */
+  const themes = [
+    { id: 'dark',     label: 'Dark',     bg: '#0e1016' },
+    { id: 'amber',    label: 'Amber',    bg: '#141610' },
+    { id: 'midnight', label: 'Midnight', bg: '#0f1220' },
+    { id: 'forest',   label: 'Forest',   bg: '#0d1410' },
+    { id: 'slate',    label: 'Slate',    bg: '#101318' },
+  ];
+  const menu = document.getElementById('theme-menu');
+  let activeTheme = localStorage.getItem('theme') || 'dark';
+
+  function applyTheme(t) {
+    document.body.classList.remove(...themes.map(x => 'theme-' + x.id));
+    if (t !== 'dark') document.body.classList.add('theme-' + t);
+    activeTheme = t;
+    localStorage.setItem('theme', t);
+    renderSwatches();
+  }
+  function renderSwatches() {
+    menu.innerHTML = '';
+    themes.forEach(t => {
+      const b = document.createElement('button');
+      b.className = 'swatch' + (t.id === activeTheme ? ' sel' : '');
+      b.style.background = t.bg;
+      b.title = t.label;
+      b.setAttribute('aria-label', t.label);
+      b.type = 'button';
+      b.onclick = () => applyTheme(t.id);
+      menu.appendChild(b);
+    });
+  }
+  if (activeTheme !== 'dark') document.body.classList.add('theme-' + activeTheme);
+  renderSwatches();
+  </script>
+</body>
+</html>
