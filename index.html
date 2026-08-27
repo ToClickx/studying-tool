@@ -88,7 +88,29 @@
     text-align: center;
     transition: background 0.3s, box-shadow 0.3s;
   }
-  .card.ringing { box-shadow: 0 0 0 3px var(--accent); }
+  .card.ringing { animation: cardpulse 0.5s ease-in-out infinite, shake 0.6s linear 2; }
+  @keyframes cardpulse {
+    0%, 100% { box-shadow: 0 0 0 3px var(--accent); }
+    50% { box-shadow: 0 0 0 3px var(--accent), 0 0 30px 8px var(--accent-glow); }
+  }
+  @keyframes shake {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(2px); }
+    30%, 50%, 70% { transform: translateX(-3px); }
+    40%, 60% { transform: translateX(3px); }
+  }
+  body.alert::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--accent-glow);
+    animation: flashpulse 0.8s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 10;
+  }
+  @keyframes flashpulse {
+    0%, 100% { opacity: 0;} 
+    50% { opacity: 1;}
+  }
   .presets { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
   .btn {
     border: none; background: var(--bg);
@@ -234,21 +256,28 @@
     return min + ' min';
   }
 
-  /* Beep. AudioContext needs a prior user gesture; preset buttons are that gesture. */
+  /* Alarm. Needs a prior user gesture (a timer button click) to unlock audio.
+     Uses a square wave at volume that cuts through music, repeating 9 blips. */
   let audioCtx = null;
-  function beep() {
+  function alarm() {
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === 'suspended') audioCtx.resume();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 960;
-      gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.35, audioCtx.currentTime + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.7);
-      osc.connect(gain); gain.connect(audioCtx.destination);
-      osc.start(); osc.stop(audioCtx.currentTime + 0.7);
+      const t0 = audioCtx.currentTime;
+      // three groups of three blips, ~1.5s total, meeting at 880/660 Hz
+      [0, 0.12, 0.24, 0.6, 0.72, 0.84, 1.2, 1.32, 1.44].forEach((off, i) => {
+        const start = t0 + off;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = i % 2 ? 660 : 880;
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.5, start + 0.015);
+        gain.gain.setValueAtTime(0.5, start + 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.12);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(start); osc.stop(start + 0.14);
+      });
     } catch (e) { /* no audio, visual still works */ }
   }
 
@@ -261,6 +290,7 @@
     tDisp.classList.remove('finished');
     stopBtn.style.display = '';
     cardEl.classList.remove('ringing');
+    document.body.classList.remove('alert');
     updateTimer();
   }
 
@@ -297,8 +327,12 @@
     endAt = null;
     liveDur.textContent = 'Time is up';
     cardEl.classList.add('ringing');
-    beep();
-    setTimeout(() => cardEl.classList.remove('ringing'), 3000);
+    document.body.classList.add('alert');
+    alarm();
+    setTimeout(() => {
+      cardEl.classList.remove('ringing');
+      document.body.classList.remove('alert');
+    }, 8000);
   }
 
   /* ---------- Themes ---------- */
