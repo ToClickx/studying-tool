@@ -136,7 +136,7 @@
     min-height: 1.1em;
   }
   .timer-display.active { color: var(--accent); }
-  .timer-display.finished { color: var(--danger); }
+  .timer-display.done { color: var(--danger); }
   .live-dur { color: var(--muted); font-size: 1rem; min-height: 1em; margin-top: 4px; }
 
   .custom-row { display: flex; gap: 8px; justify-content: center; margin-top: 18px; }
@@ -153,6 +153,27 @@
   input[type="number"]::-webkit-outer-spin-button,
   input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   input[type="number"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .vol-wrap { margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .vol-row { display: flex; align-items: center; justify-content: center; gap: 14px; }
+  .vol-label { color: var(--muted); font-size: 0.9rem; }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 180px; height: 6px; border-radius: 4px;
+    background: var(--bg); cursor: pointer;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 20px; height: 20px; border-radius: 7px;
+    background: var(--accent); cursor: pointer;
+    border: none;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 20px; height: 20px; border-radius: 7px;
+    background: var(--accent); cursor: pointer; border: none;
+  }
+  .vol-test { background: var(--accent); color: #0a0c10; font-weight: 600; padding: 10px 16px; }
 
   .hint { color: var(--muted); font-size: 0.82rem; text-align: center; }
 
@@ -200,11 +221,18 @@
       <div class="live-dur" id="liveDur"></div>
     </div>
     <div class="custom-row">
-      <input type="number" id="mins" min="1" max="600" placeholder="Custom min">
+      <input type="number" id="mins" min="1" max="600">
       <button class="btn primary" onclick="customStart()">Timer</button>
     </div>
     <div class="row">
       <button class="btn danger" id="stopBtn" onclick="stopTimer()" style="display:none">Stop</button>
+    </div>
+    <div class="vol-wrap">
+      <div class="vol-row">
+        <span class="vol-label">Alarm volume</span>
+        <input type="range" id="volSlider" min="0" max="100" value="50">
+        <button class="btn vol-test" onclick="testAlarm()">Test</button>
+      </div>
     </div>
   </div>
 
@@ -241,7 +269,24 @@
 
   let endAt = null;
   let totalMs = 0;
-  let raf = null;
+  let timerInt = null;   // display interval (setInterval, works in background tabs)
+  let alarmInt = null;   // repeating alarm burst while ringing
+  let notifyInt = null;  // repeats OS notification while ringing & tab hidden
+  const STORE_KEY = 'clockTimer';
+  const VOL_KEY = 'clockVolume';
+  let alarmVolume = parseFloat(localStorage.getItem(VOL_KEY));
+  if (!(alarmVolume >= 0 && alarmVolume <= 1)) alarmVolume = 0.5;
+
+  const volSlider = document.getElementById('volSlider');
+  volSlider.value = Math.round(alarmVolume * 100);
+  volSlider.addEventListener('input', () => {
+    alarmVolume = volSlider.value / 100;
+    localStorage.setItem(VOL_KEY, String(alarmVolume));
+  });
+  function testAlarm() {
+    unlockAudio();   // Test click is a user gesture that unlocks audio
+    alarm();
+  }
 
   function fmt(ms) {
     const total = Math.max(0, Math.ceil(ms / 1000));
@@ -257,41 +302,77 @@
   }
 
   /* Alarm. Needs a prior user gesture (a timer button click) to unlock audio.
-     Uses a square wave at volume that cuts through music, repeating 9 blips. */
+     Square-wave bursts at volume that cuts through music. The burst is
+     scheduled on the Web Audio clock so it keeps to schedule in background
+     tabs even when JS timers are throttled. */
   let audioCtx = null;
-  function alarm() {
+
+  function unlockAudio() {
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === 'suspended') audioCtx.resume();
-      const t0 = audioCtx.currentTime;
-      // three groups of three blips, ~1.5s total, meeting at 880/660 Hz
-      [0, 0.12, 0.24, 0.6, 0.72, 0.84, 1.2, 1.32, 1.44].forEach((off, i) => {
-        const start = t0 + off;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'square';
-        osc.frequency.value = i % 2 ? 660 : 880;
-        gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(0.5, start + 0.015);
-        gain.gain.setValueAtTime(0.5, start + 0.08);
-        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.12);
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.start(start); osc.stop(start + 0.14);
-      });
-    } catch (e) { /* no audio, visual still works */ }
+    } catch (e) { /* no audio support */ }
+  }
+
+  // Schedule one 9-blip burst beginning at "now" (3 groups of 3, 880/660 Hz)
+  function scheduleBurst(when) {
+    const t0 = when;
+    if (!audioCtx || audioCtx.state === 'closed') return;
+    [0, 0.12, 0.24, 0.6, 0.72, 0.84, 1.2, 1.32, 1.44].forEach((off, i) => {
+      const start = t0 + off;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = i % 2 ? 660 : 880;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(alarmVolume, start + 0.015);
+      gain.gain.setValueAtTime(alarmVolume, start + 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.12);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(start); osc.stop(start + 0.14);
+    });
+  }
+  function alarm() {
+    if (!audioCtx) return;
+    scheduleBurst(audioCtx.currentTime);
+  }
+
+  /* OS notifications: the piece that works even when this tab is hidden in the
+     background (JS timers + Web Audio are suspended for hidden tabs, the
+     notification banner/sound is not). */
+  function requestNotifyPermission() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }
+  function sendNotification() {
+    if (!document.hidden) return;               // visible: in-page beep + flash cover it
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const now = new Date();
+    const n = new Notification('Time is up', {
+      body: 'Your studying timer finished at ' +
+        now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      tag: 'clockTimerDone',
+      renotify: true,
+    });
+    n.onclick = () => { window.focus(); };
   }
 
   function startTimer(minutes) {
-    cancelAnimationFrame(raf);
-    raf = null;
+    stopTimer();
     endAt = Date.now() + minutes * 60000;
     totalMs = minutes * 60000;
+    localStorage.setItem(STORE_KEY, String(endAt));
     liveDur.textContent = fmtLong(totalMs) + ' timer';
-    tDisp.classList.remove('finished');
+    tDisp.classList.remove('active', 'done');
     stopBtn.style.display = '';
-    cardEl.classList.remove('ringing');
-    document.body.classList.remove('alert');
-    updateTimer();
+    unlockAudio();             // this click unlocks audio for the background alarm
+    requestNotifyPermission(); // this click may show the one-time permission prompt
+    renderTick();
+    timerInt = setInterval(renderTick, 250);
+    // Single long timeout for the real deadline — interval throttling won't delay it.
+    setTimeout(finish, endAt - Date.now());
   }
 
   function customStart() {
@@ -301,39 +382,101 @@
 
   function stopTimer() {
     endAt = null;
-    cancelAnimationFrame(raf);
+    clearInterval(timerInt); timerInt = null;
+    clearInterval(alarmInt); alarmInt = null;
+    clearInterval(notifyInt); notifyInt = null;
+    localStorage.removeItem(STORE_KEY);
     tDisp.textContent = '--:--';
     liveDur.textContent = '';
-    tDisp.classList.remove('active', 'finished');
+    tDisp.classList.remove('active', 'done');
     stopBtn.style.display = 'none';
     cardEl.classList.remove('ringing');
+    document.body.classList.remove('alert');
   }
 
-  function updateTimer() {
+  function renderTick() {
     if (!endAt) return;
     const rem = endAt - Date.now();
     tDisp.textContent = fmt(rem);
     tDisp.classList.add('active');
     if (rem <= 0) {
       tDisp.classList.remove('active');
-      tDisp.classList.add('finished');
+      tDisp.classList.add('done');
       finish();
-      return;
     }
-    raf = requestAnimationFrame(updateTimer);
   }
 
   function finish() {
+    clearInterval(timerInt); timerInt = null;
     endAt = null;
+    localStorage.removeItem(STORE_KEY);
     liveDur.textContent = 'Time is up';
     cardEl.classList.add('ringing');
     document.body.classList.add('alert');
+    tDisp.classList.add('done');
+    unlockAudio();
     alarm();
-    setTimeout(() => {
-      cardEl.classList.remove('ringing');
-      document.body.classList.remove('alert');
-    }, 8000);
+    // Keep ringing (every 2s) until the user presses Stop.
+    if (alarmInt === null) {
+      alarmInt = setInterval(() => { alarm(); }, 2000);
+    }
+    // If the tab is hidden, an OS notification (sound + banner) is the only
+    // thing that speaks up — JS timers and the in-page beep are suspended.
+    let notifyLeft = 9;
+    sendNotification();
+    if (notifyInt === null) {
+      notifyInt = setInterval(() => {
+        if (!document.hidden && notifyInt) { clearInterval(notifyInt); notifyInt = null; return; }
+        if (notifyLeft-- > 0) sendNotification();
+        else { clearInterval(notifyInt); notifyInt = null; }
+      }, 30000);
+    }
   }
+
+  /* When the user comes back to the tab mid-ring, the in-page alarm is already
+     running; just make sure we re-announce if we were overdue the whole time. */
+
+  /* Survive sleep / reload: resume from stored deadline. */
+  function restoreTimer() {
+    const saved = localStorage.getItem(STORE_KEY);
+    if (!saved) return;
+    const deadline = parseInt(saved, 10);
+    if (isNaN(deadline)) { localStorage.removeItem(STORE_KEY); return; }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      // Was due while we were away: go straight into ringing state.
+      endAt = deadline;
+      liveDur.textContent = 'Time is up';
+      cardEl.classList.add('ringing');
+      document.body.classList.add('alert');
+      tDisp.textContent = '00:00';
+      tDisp.classList.add('done');
+      stopBtn.style.display = '';
+      unlockAudio();
+      finish();
+      return;
+    }
+    startTimerNoStore(remaining);
+  }
+
+  function startTimerNoStore(remainingMs) {
+    endAt = Date.now() + remainingMs;
+    totalMs = remainingMs;
+    liveDur.textContent = fmtLong(totalMs) + ' timer';
+    tDisp.classList.remove('done', 'active');
+    stopBtn.style.display = '';
+    renderTick();
+    timerInt = setInterval(renderTick, 250);
+    setTimeout(finish, remainingMs);
+  }
+
+  /* On focus, re-check the deadline (covers a frozen/throttled tab). */
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && endAt && endAt - Date.now() <= 0) finish();
+  });
+  window.addEventListener('focus', () => {
+    if (endAt && endAt - Date.now() <= 0) finish();
+  });
 
   /* ---------- Themes ---------- */
   const themes = [
@@ -368,6 +511,7 @@
   }
   if (activeTheme !== 'dark') document.body.classList.add('theme-' + activeTheme);
   renderSwatches();
+  restoreTimer();
   </script>
 </body>
 </html>
